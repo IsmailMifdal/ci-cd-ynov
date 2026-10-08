@@ -1,7 +1,10 @@
 failure-threshold: warning
-no-fail: false
 
-ignored: []
+override:
+  error:
+    - DL3007
+    - DL4006
+    - DL3002
 
 trustedRegistries:
   - docker.io

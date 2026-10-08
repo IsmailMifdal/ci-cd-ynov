@@ -1,21 +1,49 @@
 name: Docker quality
 
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
 
 jobs:
-  hadolint:
+  lint:
+    name: Lint Hadolint
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: hadolint/hadolint-action@v3.1.0
-        with:
-          dockerfile: server/Dockerfile
-          config: .hadolint.yaml
+      - name: Hadolint
+        run: docker run --rm -v "$PWD":/work -w /work hadolint/hadolint:v2.12.0 hadolint --config .hadolint.yaml Dockerfile
 
-  build:
+  build-test:
+    name: Build, poids et smoke test
     runs-on: ubuntu-latest
-    needs: hadolint
+    needs: lint
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -t api:ci server
-      - run: docker images api:ci
+
+      - name: Build
+        run: docker build -t api:ci .
+
+      - name: Controle du poids (< 60 Mo)
+        run: |
+          SIZE=$(docker image inspect api:ci --format '{{.Size}}')
+          echo "Taille de l'image : $((SIZE / 1000000)) Mo"
+          test "$SIZE" -lt 60000000
+
+      - name: Controle non-root et secrets
+        run: |
+          IMG_USER=$(docker image inspect api:ci --format '{{.Config.User}}')
+          echo "Utilisateur : $IMG_USER"
+          case "$IMG_USER" in ""|root|0|0:0|root:root) exit 1 ;; esac
+          if docker history --no-trunc api:ci | grep -qiE 'password|secret'; then
+            echo "Secret detecte dans l'historique"; exit 1
+          fi
+
+      - name: Smoke test HTTP
+        run: |
+          docker run -d --name smoke -p 8000:8000 api:ci
+          for i in $(seq 1 20); do
+            if curl -fsS http://localhost:8000/health; then echo; echo "Smoke test OK"; exit 0; fi
+            sleep 1
+          done
+          docker logs smoke
+          exit 1

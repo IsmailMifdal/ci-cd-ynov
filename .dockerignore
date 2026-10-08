@@ -1,1 +1,5 @@
-.env
+# Tout exclure par défaut, n'autoriser que le strict nécessaire au build
+*
+!server/go.mod
+!server/go.sum
+!server/*.go
